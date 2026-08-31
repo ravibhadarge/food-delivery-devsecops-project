@@ -14,7 +14,7 @@ RUN npm run build
 # ═══════════════════════════════════════════════════════════════════
 # Stage 2: Serve with DISTROLESS nginx (minimal, no shell)
 # ═══════════════════════════════════════════════════════════════════
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 
 # Copy custom nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf

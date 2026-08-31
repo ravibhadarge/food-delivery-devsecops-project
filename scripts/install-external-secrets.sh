@@ -18,7 +18,7 @@ warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 
 NAMESPACE="food-delivery"
 ESO_NAMESPACE="external-secrets"
-AWS_REGION="${AWS_REGION:-ap-south-1}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
 CLUSTER_NAME="${CLUSTER_NAME:-food-delivery-cluster}"
 
 echo "=========================================="

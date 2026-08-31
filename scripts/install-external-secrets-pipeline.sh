@@ -8,13 +8,13 @@ set -euo pipefail
 #
 # Required environment variables:
 #   CLUSTER_NAME   — EKS cluster name
-#   AWS_REGION     — AWS region (e.g., ap-south-1)
+#   AWS_REGION     — AWS region (e.g., us-east-1)
 # ═══════════════════════════════════════════════════════════════════
 
 NAMESPACE="food-delivery"
 ESO_NAMESPACE="external-secrets"
 ESO_SERVICE_ACCOUNT="external-secrets"
-AWS_REGION="${AWS_REGION:-ap-south-1}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
 CLUSTER_NAME="${CLUSTER_NAME:-food-delivery-cluster}"
 
 echo "=========================================="

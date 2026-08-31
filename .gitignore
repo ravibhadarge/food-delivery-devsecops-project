@@ -1,49 +1,38 @@
-# Kiro IDE
-.kiro/
-
-# ZAP scan reports
-.zap/
-
-# Windows junk
-nul
-Thumbs.db
-desktop.ini
-
-# Environment files (secrets)
-.env
-*.env.local
-*.env.production
-
-# Node modules
-node_modules/
-npm-debug.log*
-
-# Build output
-dist/
-build/
-
 # Terraform
-terraform/.terraform/
-terraform/*.tfstate
-terraform/*.tfstate.backup
-terraform/*.tfvars
-terraform/.terraform.lock.hcl
-terraform/tfplan
-terraform/plan_output.txt
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+*.tfplan
+crash.log
+crash.*.log
 
-# Docker
-*.tar
+# Secrets
+.env
+.env.*
+*.pem
+*.key
 
-# OS files
-.DS_Store
-*.swp
-*.swo
+# Jenkins
+*.log
+
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Java
+target/
 
 # IDE
 .vscode/
 .idea/
 
-# Coverage
-coverage/
-
-# Uploads — images are included for seed data
+# OS
+.DS_Store
+Thumbs.db

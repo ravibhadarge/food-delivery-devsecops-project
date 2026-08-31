@@ -64,7 +64,7 @@ Things that stay (cost $0):
 
 1. Go to https://console.aws.amazon.com
 2. Login with your AWS account
-3. Make sure you're in **ap-south-1 (Mumbai)** region (top-right corner)
+3. Make sure you're in **us-east-1 (Mumbai)** region (top-right corner)
 
 ---
 
@@ -76,7 +76,7 @@ Things that stay (cost $0):
 2. Click **"Create bucket"**
 3. Fill in:
    - Bucket name: `food-delivery-terraform-state-0000`
-   - Region: **Asia Pacific (Mumbai) ap-south-1**
+   - Region: **Asia Pacific (Mumbai) us-east-1**
 4. Scroll down → **Bucket Versioning** → Click **Enable**
 5. Scroll down → **Default encryption** → Select **SSE-S3 (AES-256)**
 6. Leave "Block all public access" **checked** ✅
@@ -177,11 +177,11 @@ Things that stay (cost $0):
 
 #### Step 6: Create ACM Certificate (HTTPS for tagent.cfd)
 
-**Why:** So your website has HTTPS (the lock icon in browser). The certificate MUST be in the **same region as your EKS cluster** (ap-south-1).
+**Why:** So your website has HTTPS (the lock icon in browser). The certificate MUST be in the **same region as your EKS cluster** (us-east-1).
 
-> ⚠️ **IMPORTANT:** Create the certificate in **ap-south-1 (Mumbai)** 
+> ⚠️ **IMPORTANT:** Create the certificate in **us-east-1 (Mumbai)** 
 
-1. Go to **AWS Console** → Make sure region is **Asia Pacific (Mumbai) ap-south-1** (top-right corner)
+1. Go to **AWS Console** → Make sure region is **Asia Pacific (Mumbai) us-east-1** (top-right corner)
 2. Search **"Certificate Manager"** → Click it
 3. Click **"Request a certificate"**
 4. Select **"Request a public certificate"** → Click **"Next"**
@@ -245,7 +245,7 @@ Things that stay (cost $0):
 
 | Variable Name | What To Put | Example |
 |---|---|---|
-| `AWS_REGION` | Your AWS region | `ap-south-1` |
+| `AWS_REGION` | Your AWS region | `us-east-1` |
 | `AWS_ACCOUNT_ID` | Your 12-digit AWS account ID | `123456789012` |
 | `AWS_ROLE_ARN` | The role ARN from Step 5 | `arn:aws:iam::123456789012:role/food-delivery-GitHubActions-Terraform-Role-0000` |
 | `TF_STATE_BUCKET` | S3 bucket name from Step 2 | `food-delivery-terraform-state-0000` |
@@ -309,7 +309,7 @@ Things that stay (cost $0):
 #### Step 11: Connect to EKS from Bastion
 
 ```bash
-aws eks update-kubeconfig --name food-delivery-cluster --region ap-south-1
+aws eks update-kubeconfig --name food-delivery-cluster --region us-east-1
 kubectl get nodes
 ```
 
@@ -483,7 +483,7 @@ Stage 10: Falco validation                  ✅
 ```bash
 kubectl get ingress -n food-delivery
 ```
-Copy the ADDRESS (looks like: `k8s-fooddeli-xxx.ap-south-1.elb.amazonaws.com`)
+Copy the ADDRESS (looks like: `k8s-fooddeli-xxx.us-east-1.elb.amazonaws.com`)
 
 2. Go to **AWS Console → Route 53 → tagent.cfd hosted zone**
 
@@ -588,13 +588,13 @@ kubectl exec deployment/food-delivery-backend -n food-delivery -- /nodejs/bin/no
 ```bash
 INSTANCE_ID=$(aws ec2 describe-instances \
   --filters "Name=tag:Name,Values=food-delivery-bastion" "Name=instance-state-name,Values=running" \
-  --query "Reservations[0].Instances[0].InstanceId" --output text --region ap-south-1)
-aws ssm start-session --target $INSTANCE_ID --region ap-south-1
+  --query "Reservations[0].Instances[0].InstanceId" --output text --region us-east-1)
+aws ssm start-session --target $INSTANCE_ID --region us-east-1
 ```
 
 ### Connect to EKS
 ```bash
-aws eks update-kubeconfig --name food-delivery-cluster --region ap-south-1
+aws eks update-kubeconfig --name food-delivery-cluster --region us-east-1
 kubectl get pods -n food-delivery
 ```
 

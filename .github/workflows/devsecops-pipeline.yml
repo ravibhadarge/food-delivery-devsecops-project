@@ -478,7 +478,6 @@ jobs:
   # AWS is STILL required here because:
   # - EKS
   # - AWS Secrets Manager
-  # - ACM
   #
   # Docker images come from Docker Hub.
   # ═══════════════════════════════════════════════════════════════════
@@ -615,33 +614,6 @@ jobs:
 
 
       # ═════════════════════════════════════════════════════════════
-      # GET ACM CERTIFICATE
-      # ═════════════════════════════════════════════════════════════
-
-      - name: Get ACM Certificate ARN
-        shell: bash
-        run: |
-          set -e
-
-          ACM_ARN=$(aws acm list-certificates \
-            --region ${{ vars.AWS_REGION }} \
-            --query "CertificateSummaryList[?DomainName=='${{ vars.APP_URL }}'].CertificateArn" \
-            --output text)
-
-          if [ -z "$ACM_ARN" ] || [ "$ACM_ARN" = "None" ]; then
-            echo "ERROR: ACM certificate not found for ${{ vars.APP_URL }}"
-            exit 1
-          fi
-
-          echo "ACM Certificate found."
-
-          sed -i \
-            "/alb.ingress.kubernetes.io\/group.name/a\\    alb.ingress.kubernetes.io/certificate-arn: \"${ACM_ARN}\"" \
-            k8s/ingress.yaml
-
-
-      # ═════════════════════════════════════════════════════════════
-      # APPLY KUBERNETES MANIFESTS
       # ═════════════════════════════════════════════════════════════
 
       - name: Deploy to Kubernetes

@@ -75,7 +75,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: us-east-1
 
       - name: Terraform Format Check
         run: terraform fmt -check
@@ -85,7 +85,7 @@ jobs:
           terraform init \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="key=${{ env.TF_STATE_KEY }}" \
-            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="region=us-east-1" \
             -backend-config="encrypt=true" \
             -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}"
 
@@ -120,7 +120,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: us-east-1
 
       - name: Validate destroy confirmation
         if: github.event.inputs.action == 'destroy'
@@ -140,7 +140,7 @@ jobs:
           terraform init \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="key=${{ env.TF_STATE_KEY }}" \
-            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="region=us-east-1" \
             -backend-config="encrypt=true" \
             -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}"
 
@@ -165,7 +165,7 @@ jobs:
         if: github.event.inputs.action == 'apply'
         continue-on-error: true
         env:
-          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_REGION: us-east-1
           CLUSTER_NAME: food-delivery-cluster
         run: |
           # Install kubectl
@@ -173,7 +173,7 @@ jobs:
           chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
 
           # Connect to EKS
-          aws eks update-kubeconfig --region ${{ vars.AWS_REGION }} --name food-delivery-cluster
+          aws eks update-kubeconfig --region us-east-1 --name food-delivery-cluster
 
           # Run install script
           cd ${{ github.workspace }}
@@ -192,7 +192,7 @@ jobs:
         if: github.event.inputs.action == 'apply'
         run: |
           CLUSTER_NAME=$(terraform output -raw eks_cluster_name 2>/dev/null || echo "food-delivery-cluster")
-          REGION="${{ vars.AWS_REGION }}"
+          REGION="us-east-1"
 
           # Install kubectl
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -287,7 +287,7 @@ jobs:
         continue-on-error: true
         run: |
           CLUSTER_NAME=$(terraform output -raw eks_cluster_name 2>/dev/null || echo "food-delivery-cluster")
-          if ! aws eks describe-cluster --name "${CLUSTER_NAME}" --region "${{ vars.AWS_REGION }}" >/dev/null 2>&1; then
+          if ! aws eks describe-cluster --name "${CLUSTER_NAME}" --region "us-east-1" >/dev/null 2>&1; then
             echo "Cluster not found. Skipping Helm cleanup."
             exit 0
           fi
@@ -297,7 +297,7 @@ jobs:
 
           curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-          aws eks update-kubeconfig --region "${{ vars.AWS_REGION }}" --name "${CLUSTER_NAME}"
+          aws eks update-kubeconfig --region "us-east-1" --name "${CLUSTER_NAME}"
 
           # Run uninstall script (skip confirmation for CI)
           cd ${{ github.workspace }}
@@ -309,12 +309,12 @@ jobs:
         continue-on-error: true
         run: |
           CLUSTER_NAME=$(terraform output -raw eks_cluster_name 2>/dev/null || echo "food-delivery-cluster")
-          if ! aws eks describe-cluster --name "${CLUSTER_NAME}" --region "${{ vars.AWS_REGION }}" >/dev/null 2>&1; then
+          if ! aws eks describe-cluster --name "${CLUSTER_NAME}" --region "us-east-1" >/dev/null 2>&1; then
             echo "Cluster not found. Skipping."
             exit 0
           fi
 
-          aws eks update-kubeconfig --region "${{ vars.AWS_REGION }}" --name "${CLUSTER_NAME}"
+          aws eks update-kubeconfig --region "us-east-1" --name "${CLUSTER_NAME}"
 
           # Delete LoadBalancer services and Ingresses first (they create ALBs)
           kubectl get svc -A -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | while read -r NS NAME; do
@@ -356,7 +356,7 @@ jobs:
         if: github.event.inputs.action == 'destroy' && steps.terraform_destroy.outcome == 'failure'
         continue-on-error: true
         run: |
-          REGION="${{ vars.AWS_REGION }}"
+          REGION="us-east-1"
           echo "Cleaning up orphaned ENIs..."
           ENIS=$(aws ec2 describe-network-interfaces --region $REGION \
             --filters "Name=status,Values=available" \
@@ -378,7 +378,7 @@ jobs:
         if: github.event.inputs.action == 'destroy'
         continue-on-error: true
         run: |
-          REGION="${{ vars.AWS_REGION }}"
+          REGION="us-east-1"
           LB_ARNS=$(aws elbv2 describe-load-balancers --region $REGION \
             --query 'LoadBalancers[].LoadBalancerArn' --output text 2>/dev/null || echo "")
           if [ -n "$LB_ARNS" ] && [ "$LB_ARNS" != "None" ]; then
@@ -401,7 +401,7 @@ jobs:
         if: github.event.inputs.action == 'destroy'
         continue-on-error: true
         run: |
-          REGION="${{ vars.AWS_REGION }}"
+          REGION="us-east-1"
 
           # Catches the bastion (by name) AND any EKS Auto Mode nodes
           # (tagged eks:cluster-name / eks:eks-cluster-name / karpenter.sh)
@@ -433,7 +433,7 @@ jobs:
         if: github.event.inputs.action == 'destroy'
         continue-on-error: true
         run: |
-          REGION="${{ vars.AWS_REGION }}"
+          REGION="us-east-1"
           # "available" = detached. Also catch anything left "in-use"
           # whose parent instance just got force-terminated above —
           # give AWS a moment to flip the volume state to available.
@@ -450,7 +450,7 @@ jobs:
         if: github.event.inputs.action == 'destroy'
         continue-on-error: true
         run: |
-          REGION="${{ vars.AWS_REGION }}"
+          REGION="us-east-1"
           aws ec2 describe-addresses --region $REGION \
             --query 'Addresses[?AssociationId==null].AllocationId' --output text 2>/dev/null | tr '\t' '\n' | while read -r eip; do
             [ -z "$eip" ] && continue
@@ -462,7 +462,7 @@ jobs:
         if: github.event.inputs.action == 'destroy'
         continue-on-error: true
         run: |
-          REGION="${{ vars.AWS_REGION }}"
+          REGION="us-east-1"
           aws ec2 describe-nat-gateways --region $REGION \
             --filter "Name=state,Values=available,pending" \
             --query 'NatGateways[].NatGatewayId' --output text 2>/dev/null | tr '\t' '\n' | while read -r nat; do
@@ -476,7 +476,7 @@ jobs:
         if: github.event.inputs.action == 'destroy'
         continue-on-error: true
         run: |
-          REGION="${{ vars.AWS_REGION }}"
+          REGION="us-east-1"
           aws ec2 describe-snapshots --region $REGION --owner-ids self \
             --query 'Snapshots[].SnapshotId' --output text 2>/dev/null | tr '\t' '\n' | while read -r snap; do
             [ -z "$snap" ] && continue
@@ -488,7 +488,7 @@ jobs:
         if: github.event.inputs.action == 'destroy'
         continue-on-error: true
         run: |
-          REGION="${{ vars.AWS_REGION }}"
+          REGION="us-east-1"
           aws logs describe-log-groups --region $REGION \
             --log-group-name-prefix "/aws/eks" \
             --query 'logGroups[].logGroupName' --output text 2>/dev/null | tr '\t' '\n' | while read -r lg; do
@@ -500,7 +500,7 @@ jobs:
       - name: Post-Destroy — Final Verification & Summary
         if: github.event.inputs.action == 'destroy'
         run: |
-          REGION="${{ vars.AWS_REGION }}"
+          REGION="us-east-1"
 
           REMAINING_EC2=$(aws ec2 describe-instances --region $REGION \
             --filters "Name=instance-state-name,Values=running,stopped" \

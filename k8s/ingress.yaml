@@ -1,6 +1,3 @@
-# ═══════════════════════════════════════════════════════════════════
-# Ingress — Uses EKS Auto Mode ALB (no manual LB controller needed)
-# ═══════════════════════════════════════════════════════════════════
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -15,9 +12,7 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
-    # Frontend
-    - host: DOMAIN_PLACEHOLDER
-      http:
+    - http:
         paths:
           - path: /api
             pathType: Prefix
@@ -26,6 +21,7 @@ spec:
                 name: food-delivery-backend
                 port:
                   number: 4000
+
           - path: /images
             pathType: Prefix
             backend:
@@ -33,21 +29,19 @@ spec:
                 name: food-delivery-backend
                 port:
                   number: 4000
+
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: food-delivery-admin
+                port:
+                  number: 80
+
           - path: /
             pathType: Prefix
             backend:
               service:
                 name: food-delivery-frontend
-                port:
-                  number: 80
-    # Admin panel
-    - host: admin.DOMAIN_PLACEHOLDER
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: food-delivery-admin
                 port:
                   number: 80

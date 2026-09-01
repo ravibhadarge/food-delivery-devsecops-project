@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: backend
-          image: ECR_REGISTRY_PLACEHOLDER/food-delivery-backend:IMAGE_TAG_PLACEHOLDER
+          image: ravibhadarge/food-delivery-backend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 4000

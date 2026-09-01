@@ -74,7 +74,7 @@ jobs:
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::176777036414:role/food-delivery-GitHubActions-Terraform-Role-0000
           aws-region: us-east-1
 
       - name: Terraform Format Check
@@ -119,7 +119,7 @@ jobs:
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::176777036414:role/food-delivery-GitHubActions-Terraform-Role-0000
           aws-region: us-east-1
 
       - name: Validate destroy confirmation

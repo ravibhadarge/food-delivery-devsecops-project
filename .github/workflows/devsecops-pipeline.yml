@@ -604,13 +604,7 @@ jobs:
 
           echo "Updating application domain..."
 
-          sed -i \
-            "s|YOUR_DOMAIN_HERE|${{ vars.APP_URL }}|g" \
-            k8s/backend-deployment.yaml
 
-          sed -i \
-            "s|DOMAIN_PLACEHOLDER|${{ vars.APP_URL }}|g" \
-            k8s/ingress.yaml
 
 
       # ═════════════════════════════════════════════════════════════

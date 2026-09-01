@@ -1,4 +1,3 @@
-```yaml
 name: DevSecOps Pipeline - Food Delivery (Production)
 
 # ═══════════════════════════════════════════════════════════════════
@@ -10,21 +9,21 @@ name: DevSecOps Pipeline - Food Delivery (Production)
 # - 10 stages
 #
 # TRIGGERS:
-#   - PR to master    → Runs scan stages (1-6) only, no deploy
+#   - PR to main    → Runs scan stages (1-6) only, no deploy
 #   - Manual dispatch → scan-only OR full deploy
-#   - Push to master  → Runs scan stages
+#   - Push to main  → Runs scan stages
 # ═══════════════════════════════════════════════════════════════════
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths-ignore:
       - "terraform/**"
       - "*.md"
       - ".github/dependabot.yml"
 
   pull_request:
-    branches: [master]
+    branches: [main]
     paths-ignore:
       - "terraform/**"
       - "*.md"
@@ -945,4 +944,3 @@ jobs:
           echo "No critical Falco alerts."
 
           echo "Deployment is clean."
-```

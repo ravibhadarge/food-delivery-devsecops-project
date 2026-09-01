@@ -1,16 +1,18 @@
+```yaml
 name: DevSecOps Pipeline - Food Delivery (Production)
 
 # ═══════════════════════════════════════════════════════════════════
 # PRODUCTION LEVEL PIPELINE
-# - ALL secrets from AWS Secrets Manager (ZERO hardcoding)
-# - OIDC authentication (no static keys)
+# - Docker Hub for container images
+# - ALL application secrets from AWS Secrets Manager
+# - OIDC authentication for AWS (no static AWS keys)
 # - SonarQube running on bastion server
-# - 10 stages, fully automated
+# - 10 stages
 #
 # TRIGGERS:
 #   - PR to master    → Runs scan stages (1-6) only, no deploy
-#   - Manual dispatch → Runs full pipeline including deploy
-#   - Push to master  → Does NOT trigger (you deploy manually)
+#   - Manual dispatch → scan-only OR full deploy
+#   - Push to master  → Runs scan stages
 # ═══════════════════════════════════════════════════════════════════
 
 on:
@@ -20,11 +22,13 @@ on:
       - "terraform/**"
       - "*.md"
       - ".github/dependabot.yml"
+
   pull_request:
     branches: [master]
     paths-ignore:
       - "terraform/**"
       - "*.md"
+
   workflow_dispatch:
     inputs:
       action:
@@ -36,13 +40,24 @@ on:
           - scan-only
           - deploy
 
+# ═══════════════════════════════════════════════════════════════════
+# GLOBAL VARIABLES
+# ═══════════════════════════════════════════════════════════════════
+
 env:
-  ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
-  ECR_REPOSITORY_BACKEND: food-delivery-backend
-  ECR_REPOSITORY_FRONTEND: food-delivery-frontend
-  ECR_REPOSITORY_ADMIN: food-delivery-admin
+  DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+
+  DOCKERHUB_REPOSITORY_BACKEND: food-delivery-backend
+  DOCKERHUB_REPOSITORY_FRONTEND: food-delivery-frontend
+  DOCKERHUB_REPOSITORY_ADMIN: food-delivery-admin
+
   EKS_CLUSTER_NAME: food-delivery-cluster
+
   IMAGE_TAG: v${{ github.run_number }}
+
+# ═══════════════════════════════════════════════════════════════════
+# GITHUB TOKEN PERMISSIONS
+# ═══════════════════════════════════════════════════════════════════
 
 permissions:
   id-token: write
@@ -51,14 +66,19 @@ permissions:
   pull-requests: write
 
 jobs:
+
   # ═══════════════════════════════════════════════════════════════════
-  # STAGE 1: SECRET SCANNING (Episode 04)
+  # STAGE 1: SECRET SCANNING
   # ═══════════════════════════════════════════════════════════════════
+
   secret-scan:
     name: "Stage 1: Secret Scanning (Gitleaks)"
     runs-on: ubuntu-latest
+
     if: github.actor != 'dependabot[bot]'
+
     steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -69,13 +89,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+
   # ═══════════════════════════════════════════════════════════════════
-  # STAGE 2: SAST — SonarQube (Secrets from AWS Secrets Manager)
+  # STAGE 2: SAST — SONARQUBE
+  # Secrets retrieved from AWS Secrets Manager
   # ═══════════════════════════════════════════════════════════════════
+
   sast-scan:
     name: "Stage 2: SAST (SonarQube)"
     runs-on: ubuntu-latest
+
     steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -89,12 +114,17 @@ jobs:
 
       - name: Get SonarQube secrets from AWS Secrets Manager
         id: sonar-secrets
+        shell: bash
         run: |
+          set -e
+
           SECRETS=$(aws secretsmanager get-secret-value \
             --secret-id food-delivery/pipeline \
-            --query SecretString --output text)
-          echo "SONAR_TOKEN=$(echo $SECRETS | jq -r '.SONAR_TOKEN')" >> $GITHUB_ENV
-          echo "SONAR_HOST_URL=$(echo $SECRETS | jq -r '.SONAR_HOST_URL')" >> $GITHUB_ENV
+            --query SecretString \
+            --output text)
+
+          echo "SONAR_TOKEN=$(echo "$SECRETS" | jq -r '.SONAR_TOKEN')" >> "$GITHUB_ENV"
+          echo "SONAR_HOST_URL=$(echo "$SECRETS" | jq -r '.SONAR_HOST_URL')" >> "$GITHUB_ENV"
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@master
@@ -102,13 +132,17 @@ jobs:
           SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
 
+
   # ═══════════════════════════════════════════════════════════════════
-  # STAGE 3: DEPENDENCY SCAN — SCA (Episode 03)
+  # STAGE 3: DEPENDENCY SCAN — TRIVY FILESYSTEM
   # ═══════════════════════════════════════════════════════════════════
+
   dependency-scan:
     name: "Stage 3: Dependency Scan (Trivy FS)"
     runs-on: ubuntu-latest
+
     steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -139,37 +173,76 @@ jobs:
           exit-code: "1"
           severity: "CRITICAL,HIGH"
 
+
   # ═══════════════════════════════════════════════════════════════════
-  # STAGE 4: BUILD DOCKER IMAGES (Episode 05)
+  # STAGE 4: BUILD DOCKER IMAGES
+  # Docker Hub image names
   # ═══════════════════════════════════════════════════════════════════
+
   build-images:
     name: "Stage 4: Build Docker Images"
     runs-on: ubuntu-latest
-    needs: [secret-scan, sast-scan, dependency-scan]
+
+    needs:
+      - secret-scan
+      - sast-scan
+      - dependency-scan
+
     steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # ─────────────────────────────────────────────────────────────
+      # Backend
+      # ─────────────────────────────────────────────────────────────
+
       - name: Build Backend Image
         run: |
-          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_BACKEND }}:${{ env.IMAGE_TAG }} ./backend
+          docker build \
+            -t ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_BACKEND }}:${{ env.IMAGE_TAG }} \
+            ./backend
+
+      # ─────────────────────────────────────────────────────────────
+      # Frontend
+      # ─────────────────────────────────────────────────────────────
 
       - name: Build Frontend Image
         run: |
-          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_FRONTEND }}:${{ env.IMAGE_TAG }} ./frontend
+          docker build \
+            -t ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_FRONTEND }}:${{ env.IMAGE_TAG }} \
+            ./frontend
+
+      # ─────────────────────────────────────────────────────────────
+      # Admin
+      # ─────────────────────────────────────────────────────────────
 
       - name: Build Admin Image
         run: |
-          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_ADMIN }}:${{ env.IMAGE_TAG }} ./admin
+          docker build \
+            -t ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_ADMIN }}:${{ env.IMAGE_TAG }} \
+            ./admin
+
+      # ─────────────────────────────────────────────────────────────
+      # Save images
+      # ─────────────────────────────────────────────────────────────
 
       - name: Save images for next stages
         run: |
-          docker save ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_BACKEND }}:${{ env.IMAGE_TAG }} -o backend-image.tar
-          docker save ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_FRONTEND }}:${{ env.IMAGE_TAG }} -o frontend-image.tar
-          docker save ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_ADMIN }}:${{ env.IMAGE_TAG }} -o admin-image.tar
+          docker save \
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_BACKEND }}:${{ env.IMAGE_TAG }} \
+            -o backend-image.tar
+
+          docker save \
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_FRONTEND }}:${{ env.IMAGE_TAG }} \
+            -o frontend-image.tar
+
+          docker save \
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_ADMIN }}:${{ env.IMAGE_TAG }} \
+            -o admin-image.tar
 
       - name: Upload image artifacts
         uses: actions/upload-artifact@v4
@@ -181,14 +254,20 @@ jobs:
             admin-image.tar
           retention-days: 1
 
+
   # ═══════════════════════════════════════════════════════════════════
-  # STAGE 5: CONTAINER IMAGE SCAN (Episode 05)
+  # STAGE 5: CONTAINER IMAGE SCAN — TRIVY
   # ═══════════════════════════════════════════════════════════════════
+
   image-scan:
     name: "Stage 5: Container Image Scan (Trivy)"
     runs-on: ubuntu-latest
-    needs: [build-images]
+
+    needs:
+      - build-images
+
     steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -203,10 +282,14 @@ jobs:
           docker load -i frontend-image.tar
           docker load -i admin-image.tar
 
+      # ─────────────────────────────────────────────────────────────
+      # Backend scan
+      # ─────────────────────────────────────────────────────────────
+
       - name: Scan Backend Image
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_BACKEND }}:${{ env.IMAGE_TAG }}"
+          image-ref: "${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_BACKEND }}:${{ env.IMAGE_TAG }}"
           format: "sarif"
           output: "trivy-backend.sarif"
           exit-code: "0"
@@ -215,10 +298,14 @@ jobs:
           scanners: "vuln"
           trivyignores: ".trivyignore"
 
+      # ─────────────────────────────────────────────────────────────
+      # Frontend scan
+      # ─────────────────────────────────────────────────────────────
+
       - name: Scan Frontend Image
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_FRONTEND }}:${{ env.IMAGE_TAG }}"
+          image-ref: "${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_FRONTEND }}:${{ env.IMAGE_TAG }}"
           format: "sarif"
           output: "trivy-frontend.sarif"
           exit-code: "0"
@@ -226,10 +313,14 @@ jobs:
           ignore-unfixed: true
           scanners: "vuln"
 
+      # ─────────────────────────────────────────────────────────────
+      # Admin scan
+      # ─────────────────────────────────────────────────────────────
+
       - name: Scan Admin Image
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_ADMIN }}:${{ env.IMAGE_TAG }}"
+          image-ref: "${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_ADMIN }}:${{ env.IMAGE_TAG }}"
           format: "sarif"
           output: "trivy-admin.sarif"
           exit-code: "0"
@@ -237,7 +328,11 @@ jobs:
           ignore-unfixed: true
           scanners: "vuln"
 
-      - name: Upload Trivy SARIF results
+      # ─────────────────────────────────────────────────────────────
+      # Upload SARIF results
+      # ─────────────────────────────────────────────────────────────
+
+      - name: Upload Trivy Backend SARIF
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
@@ -258,16 +353,26 @@ jobs:
           sarif_file: "trivy-admin.sarif"
           category: "trivy-admin"
 
+
   # ═══════════════════════════════════════════════════════════════════
-  # STAGE 6: IaC SECURITY SCAN (Episode 07)
+  # STAGE 6: IaC SECURITY SCAN — CHECKOV
   # ═══════════════════════════════════════════════════════════════════
+
   iac-scan:
     name: "Stage 6: IaC Scan (Checkov)"
     runs-on: ubuntu-latest
-    needs: [build-images]
+
+    needs:
+      - build-images
+
     steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # ─────────────────────────────────────────────────────────────
+      # Kubernetes manifests
+      # ─────────────────────────────────────────────────────────────
 
       - name: Checkov - Scan Kubernetes manifests
         uses: bridgecrewio/checkov-action@master
@@ -276,12 +381,23 @@ jobs:
           framework: kubernetes
           output_format: sarif
           soft_fail: false
-          # CKV_K8S_43: Images use dynamic tags (built at runtime, digest not known at manifest creation)
-          # CKV_K8S_35: Secrets injected via External Secrets Operator env vars (AWS Secrets Manager → K8s)
-          # CKV_K8S_22: MongoDB requires writable /data/db filesystem by design
+
+          # CKV_K8S_43:
+          # Images use dynamic tags generated by GitHub Actions.
+
+          # CKV_K8S_35:
+          # Secrets are injected from AWS Secrets Manager.
+
+          # CKV_K8S_22:
+          # MongoDB requires writable /data/db.
+
           skip_check: "CKV_K8S_43,CKV_K8S_35,CKV_K8S_22"
 
-      - name: Checkov - Scan Dockerfiles
+      # ─────────────────────────────────────────────────────────────
+      # Dockerfile
+      # ─────────────────────────────────────────────────────────────
+
+      - name: Checkov - Scan Backend Dockerfile
         uses: bridgecrewio/checkov-action@master
         with:
           file: backend/Dockerfile
@@ -289,15 +405,25 @@ jobs:
           soft_fail: true
           skip_check: "CKV_DOCKER_2,CKV_DOCKER_7"
 
+
   # ═══════════════════════════════════════════════════════════════════
-  # STAGE 7: PUSH TO AMAZON ECR (Episode 07 — OIDC)
+  # STAGE 7: PUSH TO DOCKER HUB
   # ═══════════════════════════════════════════════════════════════════
-  push-to-ecr:
-    name: "Stage 7: Push to ECR (OIDC)"
+
+  push-to-dockerhub:
+    name: "Stage 7: Push to Docker Hub"
     runs-on: ubuntu-latest
-    needs: [image-scan, iac-scan]
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy'
+
+    needs:
+      - image-scan
+      - iac-scan
+
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'deploy'
+
     steps:
+
       - name: Download image artifacts
         uses: actions/download-artifact@v4
         with:
@@ -309,38 +435,70 @@ jobs:
           docker load -i frontend-image.tar
           docker load -i admin-image.tar
 
-      - name: Configure AWS Credentials (OIDC — No Keys!)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+      # ─────────────────────────────────────────────────────────────
+      # Docker Hub login
+      # ─────────────────────────────────────────────────────────────
 
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # ─────────────────────────────────────────────────────────────
+      # Push Backend
+      # ─────────────────────────────────────────────────────────────
 
       - name: Push Backend Image
         run: |
-          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_BACKEND }}:${{ env.IMAGE_TAG }}
+          docker push \
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_BACKEND }}:${{ env.IMAGE_TAG }}
+
+      # ─────────────────────────────────────────────────────────────
+      # Push Frontend
+      # ─────────────────────────────────────────────────────────────
 
       - name: Push Frontend Image
         run: |
-          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_FRONTEND }}:${{ env.IMAGE_TAG }}
+          docker push \
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_FRONTEND }}:${{ env.IMAGE_TAG }}
+
+      # ─────────────────────────────────────────────────────────────
+      # Push Admin
+      # ─────────────────────────────────────────────────────────────
 
       - name: Push Admin Image
         run: |
-          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_ADMIN }}:${{ env.IMAGE_TAG }}
+          docker push \
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_REPOSITORY_ADMIN }}:${{ env.IMAGE_TAG }}
+
 
   # ═══════════════════════════════════════════════════════════════════
-  # STAGE 8: DEPLOY TO KUBERNETES (Episode 06)
-  # Secrets injected from AWS Secrets Manager — ZERO hardcoding
+  # STAGE 8: DEPLOY TO KUBERNETES / EKS
+  #
+  # AWS is STILL required here because:
+  # - EKS
+  # - AWS Secrets Manager
+  # - ACM
+  #
+  # Docker images come from Docker Hub.
   # ═══════════════════════════════════════════════════════════════════
+
   deploy:
     name: "Stage 8: Deploy to EKS"
     runs-on: ubuntu-latest
-    needs: [push-to-ecr]
+
+    needs:
+      - push-to-dockerhub
+
     steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # ─────────────────────────────────────────────────────────────
+      # AWS OIDC
+      # ─────────────────────────────────────────────────────────────
 
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -348,31 +506,55 @@ jobs:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
+      # ─────────────────────────────────────────────────────────────
+      # Configure kubectl
+      # ─────────────────────────────────────────────────────────────
+
       - name: Update kubeconfig
         run: |
-          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ vars.AWS_REGION }}
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ vars.AWS_REGION }}
 
-      - name: Fetch app secrets from AWS Secrets Manager and create K8s secret
+      # ═════════════════════════════════════════════════════════════
+      # GET SECRETS FROM AWS SECRETS MANAGER
+      # ═════════════════════════════════════════════════════════════
+
+      - name: Fetch app secrets from AWS Secrets Manager
+        shell: bash
         run: |
-          # Get secrets from AWS Secrets Manager
+          set -e
+
+          echo "Getting application secrets..."
+
           SECRETS=$(aws secretsmanager get-secret-value \
             --secret-id food-delivery/app-secrets \
-            --query SecretString --output text)
+            --query SecretString \
+            --output text)
 
           DB_SECRETS=$(aws secretsmanager get-secret-value \
             --secret-id food-delivery/database \
-            --query SecretString --output text)
+            --query SecretString \
+            --output text)
 
-          MONGODB_URI=$(echo $SECRETS | jq -r '.MONGODB_URI')
-          JWT_SECRET=$(echo $SECRETS | jq -r '.JWT_SECRET')
-          STRIPE_KEY=$(echo $SECRETS | jq -r '.STRIPE_SECRET_KEY')
-          DB_USERNAME=$(echo $DB_SECRETS | jq -r '.DB_USERNAME')
-          DB_PASSWORD=$(echo $DB_SECRETS | jq -r '.DB_PASSWORD')
+          MONGODB_URI=$(echo "$SECRETS" | jq -r '.MONGODB_URI')
+          JWT_SECRET=$(echo "$SECRETS" | jq -r '.JWT_SECRET')
+          STRIPE_KEY=$(echo "$SECRETS" | jq -r '.STRIPE_SECRET_KEY')
 
-          # Create/update Kubernetes secret from Secrets Manager values
-          kubectl create namespace food-delivery --dry-run=client -o yaml | kubectl apply -f -
+          DB_USERNAME=$(echo "$DB_SECRETS" | jq -r '.DB_USERNAME')
+          DB_PASSWORD=$(echo "$DB_SECRETS" | jq -r '.DB_PASSWORD')
 
-          kubectl delete secret food-delivery-secrets -n food-delivery --ignore-not-found
+          echo "Creating Kubernetes namespace..."
+
+          kubectl create namespace food-delivery \
+            --dry-run=client \
+            -o yaml | kubectl apply -f -
+
+          echo "Replacing Kubernetes secret..."
+
+          kubectl delete secret food-delivery-secrets \
+            -n food-delivery \
+            --ignore-not-found
 
           kubectl create secret generic food-delivery-secrets \
             --namespace food-delivery \
@@ -382,69 +564,221 @@ jobs:
             --from-literal=mongodb-username="$DB_USERNAME" \
             --from-literal=mongodb-password="$DB_PASSWORD"
 
-      - name: Deploy to Kubernetes
+          echo "Kubernetes secret created successfully."
+
+
+      # ═════════════════════════════════════════════════════════════
+      # PREPARE KUBERNETES MANIFESTS
+      # ═════════════════════════════════════════════════════════════
+
+      - name: Prepare Kubernetes manifests
+        shell: bash
         run: |
-          # Update image tags in deployment manifests
-          sed -i "s|IMAGE_TAG_PLACEHOLDER|${{ env.IMAGE_TAG }}|g" k8s/backend-deployment.yaml
-          sed -i "s|IMAGE_TAG_PLACEHOLDER|${{ env.IMAGE_TAG }}|g" k8s/frontend-deployment.yaml
-          sed -i "s|IMAGE_TAG_PLACEHOLDER|${{ env.IMAGE_TAG }}|g" k8s/admin-deployment.yaml
-          sed -i "s|ECR_REGISTRY_PLACEHOLDER|${{ env.ECR_REGISTRY }}|g" k8s/backend-deployment.yaml
-          sed -i "s|ECR_REGISTRY_PLACEHOLDER|${{ env.ECR_REGISTRY }}|g" k8s/frontend-deployment.yaml
-          sed -i "s|ECR_REGISTRY_PLACEHOLDER|${{ env.ECR_REGISTRY }}|g" k8s/admin-deployment.yaml
-          sed -i "s|YOUR_DOMAIN_HERE|${{ vars.APP_URL }}|g" k8s/backend-deployment.yaml
-          sed -i "s|DOMAIN_PLACEHOLDER|${{ vars.APP_URL }}|g" k8s/ingress.yaml
+          set -e
 
-          # Get ACM certificate ARN (created manually in AWS)
-          ACM_ARN=$(aws acm list-certificates --region ${{ vars.AWS_REGION }} \
-            --query "CertificateSummaryList[?DomainName=='${{ vars.APP_URL }}'].CertificateArn" --output text)
-          echo "Using ACM Certificate: $ACM_ARN"
+          echo "Updating Docker Hub image references..."
 
-          # Inject ACM ARN into ingress
-          sed -i "/alb.ingress.kubernetes.io\/group.name/a\\    alb.ingress.kubernetes.io/certificate-arn: \"${ACM_ARN}\"" k8s/ingress.yaml
+          sed -i \
+            "s|DOCKERHUB_USERNAME_PLACEHOLDER|${{ env.DOCKERHUB_USERNAME }}|g" \
+            k8s/backend-deployment.yaml
 
-          # Apply manifests
+          sed -i \
+            "s|DOCKERHUB_USERNAME_PLACEHOLDER|${{ env.DOCKERHUB_USERNAME }}|g" \
+            k8s/frontend-deployment.yaml
+
+          sed -i \
+            "s|DOCKERHUB_USERNAME_PLACEHOLDER|${{ env.DOCKERHUB_USERNAME }}|g" \
+            k8s/admin-deployment.yaml
+
+          echo "Updating image tags..."
+
+          sed -i \
+            "s|IMAGE_TAG_PLACEHOLDER|${{ env.IMAGE_TAG }}|g" \
+            k8s/backend-deployment.yaml
+
+          sed -i \
+            "s|IMAGE_TAG_PLACEHOLDER|${{ env.IMAGE_TAG }}|g" \
+            k8s/frontend-deployment.yaml
+
+          sed -i \
+            "s|IMAGE_TAG_PLACEHOLDER|${{ env.IMAGE_TAG }}|g" \
+            k8s/admin-deployment.yaml
+
+          echo "Updating application domain..."
+
+          sed -i \
+            "s|YOUR_DOMAIN_HERE|${{ vars.APP_URL }}|g" \
+            k8s/backend-deployment.yaml
+
+          sed -i \
+            "s|DOMAIN_PLACEHOLDER|${{ vars.APP_URL }}|g" \
+            k8s/ingress.yaml
+
+
+      # ═════════════════════════════════════════════════════════════
+      # GET ACM CERTIFICATE
+      # ═════════════════════════════════════════════════════════════
+
+      - name: Get ACM Certificate ARN
+        shell: bash
+        run: |
+          set -e
+
+          ACM_ARN=$(aws acm list-certificates \
+            --region ${{ vars.AWS_REGION }} \
+            --query "CertificateSummaryList[?DomainName=='${{ vars.APP_URL }}'].CertificateArn" \
+            --output text)
+
+          if [ -z "$ACM_ARN" ] || [ "$ACM_ARN" = "None" ]; then
+            echo "ERROR: ACM certificate not found for ${{ vars.APP_URL }}"
+            exit 1
+          fi
+
+          echo "ACM Certificate found."
+
+          sed -i \
+            "/alb.ingress.kubernetes.io\/group.name/a\\    alb.ingress.kubernetes.io/certificate-arn: \"${ACM_ARN}\"" \
+            k8s/ingress.yaml
+
+
+      # ═════════════════════════════════════════════════════════════
+      # APPLY KUBERNETES MANIFESTS
+      # ═════════════════════════════════════════════════════════════
+
+      - name: Deploy to Kubernetes
+        shell: bash
+        run: |
+          set -e
+
+          echo "Applying Kubernetes manifests..."
+
           kubectl apply -f k8s/namespace.yaml
+
           kubectl apply -f k8s/storageclass.yaml
+
           kubectl apply -f k8s/networkpolicy.yaml
+
           kubectl apply -f k8s/mongodb-deployment.yaml
-          kubectl apply -f k8s/backend-deployment.yaml --force
+
+          kubectl apply \
+            -f k8s/backend-deployment.yaml \
+            --force
+
           kubectl apply -f k8s/backend-service.yaml
+
           kubectl apply -f k8s/frontend-deployment.yaml
+
           kubectl apply -f k8s/frontend-service.yaml
+
           kubectl apply -f k8s/admin-deployment.yaml
+
           kubectl apply -f k8s/admin-service.yaml
+
           kubectl apply -f k8s/ingressclass.yaml
+
           kubectl apply -f k8s/ingress.yaml
 
-          # Wait for rollouts
-          kubectl rollout status deployment/food-delivery-backend -n food-delivery --timeout=180s
-          kubectl rollout status deployment/food-delivery-frontend -n food-delivery --timeout=120s
-          kubectl rollout status deployment/food-delivery-admin -n food-delivery --timeout=120s
+          echo "Kubernetes manifests applied."
 
-          # Seed database with food items and admin user
+
+      # ═════════════════════════════════════════════════════════════
+      # WAIT FOR APPLICATIONS
+      # ═════════════════════════════════════════════════════════════
+
+      - name: Wait for deployment rollouts
+        shell: bash
+        run: |
+          set -e
+
+          echo "Waiting for Backend..."
+
+          kubectl rollout status \
+            deployment/food-delivery-backend \
+            -n food-delivery \
+            --timeout=180s
+
+          echo "Waiting for Frontend..."
+
+          kubectl rollout status \
+            deployment/food-delivery-frontend \
+            -n food-delivery \
+            --timeout=120s
+
+          echo "Waiting for Admin..."
+
+          kubectl rollout status \
+            deployment/food-delivery-admin \
+            -n food-delivery \
+            --timeout=120s
+
+          echo "All deployments are ready."
+
+
+      # ═════════════════════════════════════════════════════════════
+      # DATABASE SEED
+      # ═════════════════════════════════════════════════════════════
+
+      - name: Seed database
+        shell: bash
+        run: |
           echo "Seeding database..."
-          kubectl exec deployment/food-delivery-backend -n food-delivery -- /nodejs/bin/node seed.js || true
+
+          kubectl exec \
+            deployment/food-delivery-backend \
+            -n food-delivery \
+            -- /nodejs/bin/node seed.js || true
+
+          echo "Database seed step completed."
+
+
+      # ═════════════════════════════════════════════════════════════
+      # DEPLOYMENT INFORMATION
+      # ═════════════════════════════════════════════════════════════
 
       - name: Get deployment info
         if: always()
+        shell: bash
         run: |
-          echo "=== Deployment Status ==="
-          kubectl get pods -n food-delivery
+
+          echo "========================================"
+          echo "DEPLOYMENT STATUS"
+          echo "========================================"
+
+          kubectl get pods \
+            -n food-delivery
+
           echo ""
-          echo "=== Services ==="
-          kubectl get svc -n food-delivery
+
+          echo "========================================"
+          echo "SERVICES"
+          echo "========================================"
+
+          kubectl get svc \
+            -n food-delivery
+
           echo ""
-          echo "=== Ingress (ALB URL) ==="
-          kubectl get ingress -n food-delivery
+
+          echo "========================================"
+          echo "INGRESS / ALB"
+          echo "========================================"
+
+          kubectl get ingress \
+            -n food-delivery
+
 
   # ═══════════════════════════════════════════════════════════════════
-  # STAGE 9: DAST — Dynamic Application Security Testing (Episode 03)
+  # STAGE 9: DAST — OWASP ZAP
   # ═══════════════════════════════════════════════════════════════════
+
   dast-scan:
     name: "Stage 9: DAST (OWASP ZAP)"
     runs-on: ubuntu-latest
-    needs: [deploy]
+
+    needs:
+      - deploy
+
     steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -456,18 +790,37 @@ jobs:
 
       - name: Get ALB URL from EKS
         id: get-url
+        shell: bash
         run: |
-          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ vars.AWS_REGION }}
-          # Wait for ALB to be provisioned
-          echo "Waiting for ALB to be ready..."
+
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ vars.AWS_REGION }}
+
+          echo "Waiting for ALB to be provisioned..."
+
           sleep 90
-          ALB_URL=$(kubectl get ingress food-delivery-ingress -n food-delivery -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+
+          ALB_URL=$(kubectl get ingress \
+            food-delivery-ingress \
+            -n food-delivery \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' \
+            2>/dev/null || echo "")
+
           if [ -z "$ALB_URL" ]; then
-            echo "ALB not ready yet, using APP_URL"
+
+            echo "ALB not ready yet."
+
+            echo "Using APP_URL instead."
+
             ALB_URL="${{ vars.APP_URL }}"
+
           fi
-          echo "APP_TARGET_URL=https://$ALB_URL" >> $GITHUB_ENV
-          echo "Target URL: https://$ALB_URL"
+
+          echo "APP_TARGET_URL=https://$ALB_URL" >> "$GITHUB_ENV"
+
+          echo "Target URL configured."
+
 
       - name: OWASP ZAP - Full Scan
         uses: zaproxy/action-full-scan@v0.10.0
@@ -478,6 +831,7 @@ jobs:
           cmd_options: "-a"
           allow_issue_writing: false
 
+
       - name: Upload ZAP Report
         uses: actions/upload-artifact@v4
         if: always()
@@ -485,14 +839,20 @@ jobs:
           name: zap-report
           path: report_html.html
 
+
   # ═══════════════════════════════════════════════════════════════════
-  # STAGE 10: RUNTIME MONITORING VALIDATION (Episode 08)
+  # STAGE 10: RUNTIME MONITORING — FALCO
   # ═══════════════════════════════════════════════════════════════════
+
   runtime-validation:
     name: "Stage 10: Runtime Security (Falco Validation)"
     runs-on: ubuntu-latest
-    needs: [deploy]
+
+    needs:
+      - deploy
+
     steps:
+
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -501,29 +861,88 @@ jobs:
 
       - name: Update kubeconfig
         run: |
-          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ vars.AWS_REGION }}
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ vars.AWS_REGION }}
+
+
+      # ═════════════════════════════════════════════════════════════
+      # CHECK FALCO
+      # ═════════════════════════════════════════════════════════════
 
       - name: Verify Falco is running
+        shell: bash
         run: |
+
           echo "Checking Falco DaemonSet status..."
-          kubectl get daemonset falco -n falco || {
-            echo "WARNING: Falco not installed. Skipping runtime validation."
+
+          if ! kubectl get daemonset falco -n falco >/dev/null 2>&1; then
+
+            echo "WARNING: Falco not installed."
+
+            echo "Skipping runtime validation."
+
             exit 0
-          }
-          DESIRED=$(kubectl get daemonset falco -n falco -o jsonpath='{.status.desiredNumberScheduled}')
-          READY=$(kubectl get daemonset falco -n falco -o jsonpath='{.status.numberReady}')
-          if [ "$DESIRED" != "$READY" ]; then
-            echo "WARNING: Falco not fully running. Desired: $DESIRED, Ready: $READY"
+
           fi
-          echo "✅ Falco is running on $READY nodes."
+
+          DESIRED=$(kubectl get daemonset falco \
+            -n falco \
+            -o jsonpath='{.status.desiredNumberScheduled}')
+
+          READY=$(kubectl get daemonset falco \
+            -n falco \
+            -o jsonpath='{.status.numberReady}')
+
+          if [ "$DESIRED" != "$READY" ]; then
+
+            echo "WARNING: Falco not fully running."
+
+            echo "Desired: $DESIRED"
+
+            echo "Ready: $READY"
+
+          fi
+
+          echo "Falco is running on $READY nodes."
+
+
+      # ═════════════════════════════════════════════════════════════
+      # CHECK CRITICAL ALERTS
+      # ═════════════════════════════════════════════════════════════
 
       - name: Check for critical Falco alerts post-deployment
+        shell: bash
         run: |
-          echo "Checking for critical Falco alerts in the last 5 minutes..."
-          CRITICAL_ALERTS=$(kubectl logs -n falco -l app.kubernetes.io/name=falco --since=5m 2>/dev/null | grep -i "Critical" | wc -l || echo "0")
+
+          echo "Checking for critical Falco alerts..."
+
+          CRITICAL_ALERTS=$(
+            kubectl logs \
+              -n falco \
+              -l app.kubernetes.io/name=falco \
+              --since=5m \
+              2>/dev/null |
+            grep -i "Critical" |
+            wc -l || echo "0"
+          )
+
           if [ "$CRITICAL_ALERTS" -gt "0" ]; then
-            echo "⚠️  WARNING: $CRITICAL_ALERTS critical Falco alerts detected after deployment!"
-            kubectl logs -n falco -l app.kubernetes.io/name=falco --since=5m | grep -i "Critical" | tail -10
+
+            echo "WARNING: $CRITICAL_ALERTS critical Falco alerts detected!"
+
+            kubectl logs \
+              -n falco \
+              -l app.kubernetes.io/name=falco \
+              --since=5m |
+              grep -i "Critical" |
+              tail -10
+
             exit 1
+
           fi
-          echo "✅ No critical alerts. Deployment is clean."
+
+          echo "No critical Falco alerts."
+
+          echo "Deployment is clean."
+```

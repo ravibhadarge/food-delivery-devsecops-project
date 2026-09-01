@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: admin
-          image: ravibhadarge/food-delivery-admin:latest
+          image: ravibhadarge/food-delivery-admin:v23
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

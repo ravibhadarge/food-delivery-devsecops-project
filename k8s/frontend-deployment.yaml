@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: frontend
-          image: ravibhadarge/food-delivery-frontend:latest
+          image: ravibhadarge/food-delivery-frontend:v23
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

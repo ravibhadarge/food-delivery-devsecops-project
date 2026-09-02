@@ -332,21 +332,21 @@ jobs:
       # ─────────────────────────────────────────────────────────────
 
       - name: Upload Trivy Backend SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: "trivy-backend.sarif"
           category: "trivy-backend"
 
       - name: Upload Trivy Frontend SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: "trivy-frontend.sarif"
           category: "trivy-frontend"
 
       - name: Upload Trivy Admin SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: "trivy-admin.sarif"

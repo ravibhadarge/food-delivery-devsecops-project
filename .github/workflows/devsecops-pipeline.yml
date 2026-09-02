@@ -792,7 +792,6 @@ jobs:
         continue-on-error: true
         with:
           target: ${{ env.APP_TARGET_URL }}
-          rules_file_name: ".zap/rules.tsv"
           cmd_options: "-a"
           allow_issue_writing: false
 

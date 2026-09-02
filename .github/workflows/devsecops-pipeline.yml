@@ -418,8 +418,11 @@ jobs:
       - iac-scan
 
     if: >
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.action == 'deploy'
+      github.event_name == 'push' ||
+      (
+        github.event_name == 'workflow_dispatch' &&
+        github.event.inputs.action == 'deploy'
+      )
 
     steps:
 
